@@ -50,7 +50,7 @@ class AppsflyerStream(HttpStream, ABC):
 
     @property
     def url_base(self) -> str:
-        return f"https://hq.appsflyer.com/export/{self.app_id}/"
+        return f"https://hq1.appsflyer.com/export/{self.app_id}/"
 
     def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
         return None
@@ -296,7 +296,7 @@ class SourceAppsflyer(AbstractSource):
             api_token = config["api_token"]
             dates = pendulum.now("UTC").to_date_string()
             test_url = (
-                f"https://hq.appsflyer.com/export/{app_id}/partners_report/v5?api_token={api_token}&from={dates}&to={dates}&timezone=UTC"
+                f"https://hq1.appsflyer.com/export/{app_id}/partners_report/v5?api_token={api_token}&from={dates}&to={dates}&timezone=UTC"
             )
             response = requests.request("GET", url=test_url)
 
