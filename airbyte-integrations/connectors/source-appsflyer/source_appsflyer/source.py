@@ -38,6 +38,8 @@ class AppsflyerStream(HttpStream, ABC):
     additional_fields = ()
     maximum_rows = 1_000_000
     transformer: TypeTransformer = TypeTransformer(TransformConfig.DefaultSchemaNormalization | TransformConfig.CustomSchemaNormalization)
+    url_domain = "https://hq1.appsflyer.com"
+    endpoint_type = "raw-data"
 
     def __init__(
         self, app_id: str, api_token: str, timezone: str, start_date: Union[date, str] = None, end_date: Union[date, str] = None, **kwargs
@@ -51,7 +53,7 @@ class AppsflyerStream(HttpStream, ABC):
 
     @property
     def url_base(self) -> str:
-        return f"https://hq1.appsflyer.com/api/raw-data/export/app/{self.app_id}/"
+        return f"{self.url_domain}/api/{self.endpoint_type}/export/app/{self.app_id}/"
 
     def next_page_token(self, response: requests.Response) -> Optional[Mapping[str, Any]]:
         return None
@@ -174,6 +176,7 @@ class IncrementalAppsflyerStream(AppsflyerStream, ABC):
 class RawDataMixin:
     main_fields = fields.raw_data.main_fields
     additional_fields = fields.raw_data.additional_fields
+    endpoint_type = "raw-data"
 
     def request_params(
         self, stream_state: Mapping[str, Any], stream_slice: Mapping[str, any] = None, next_page_token: Mapping[str, Any] = None
@@ -189,6 +192,7 @@ class RawDataMixin:
 
 class AggregateDataMixin:
     cursor_field = "date"
+    endpoint_type = "agg-data"
 
     def request_params(
         self, stream_state: Mapping[str, Any], stream_slice: Mapping[str, any] = None, next_page_token: Mapping[str, Any] = None
@@ -205,7 +209,7 @@ class RetargetingMixin:
         self, stream_state: Mapping[str, Any], stream_slice: Mapping[str, any] = None, next_page_token: Mapping[str, Any] = None
     ) -> MutableMapping[str, Any]:
         params = super().request_params(stream_state, stream_slice, next_page_token)
-        params["reattr"] = True
+        params["reattr"] = "true"
 
         return params
 
@@ -239,12 +243,22 @@ class Installs(RawDataMixin, IncrementalAppsflyerStream):
         return "installs_report/v5"
 
 
-class RetargetingInAppEvents(RetargetingMixin, InAppEvents):
-    pass
+class RetargetingInAppEvents(RawDataMixin, IncrementalAppsflyerStream):
+    cursor_field = "event_time"
+
+    def path(
+        self, stream_state: Mapping[str, Any] = None, stream_slice: Mapping[str, Any] = None, next_page_token: Mapping[str, Any] = None
+    ) -> str:
+        return "in-app-events-retarget/v5"
 
 
-class RetargetingConversions(RetargetingMixin, Installs):
-    pass
+class RetargetingConversions(RawDataMixin, IncrementalAppsflyerStream):
+    cursor_field = "install_time"
+
+    def path(
+        self, stream_state: Mapping[str, Any] = None, stream_slice: Mapping[str, Any] = None, next_page_token: Mapping[str, Any] = None
+    ) -> str:
+        return "installs-retarget/v5"
 
 
 class PartnersReport(AggregateDataMixin, IncrementalAppsflyerStream):
@@ -295,13 +309,9 @@ class SourceAppsflyer(AbstractSource):
                 return False, "The supplied timezone is invalid."
             app_id = config["app_id"]
             api_token = config["api_token"]
-            headers = {
-                 "authorization": "Bearer {}".format(api_token)
-            }
+            headers = {"authorization": "Bearer {}".format(api_token)}
             dates = pendulum.now("UTC").to_date_string()
-            test_url = (
-                f"https://hq1.appsflyer.com/api/raw-data/export/app/{app_id}/installs_report/v5?from={dates}&to={dates}&timezone=UTC"
-            )
+            test_url = f"https://hq1.appsflyer.com/api/raw-data/export/app/{app_id}/installs_report/v5?from={dates}&to={dates}&timezone=UTC"
             response = requests.request("GET", url=test_url, headers=headers)
 
             if response.status_code != 200:
